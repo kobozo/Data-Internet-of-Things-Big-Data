@@ -13,6 +13,10 @@ runs/
 data/*
 !data/.gitkeep
 
+# Personal recording prep notes (kept local, not submitted)
+docs/presentation_script.md
+docs/screencast_checklist.md
+
 # OS
 .DS_Store
 Thumbs.db
