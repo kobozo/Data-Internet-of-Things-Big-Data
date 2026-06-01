@@ -3,12 +3,15 @@ Livestream reader.
 
 Resolves any public livestream URL (YouTube, m3u8, direct file, or a
 webcam index) into an OpenCV VideoCapture.  Includes auto-reconnect
-and a frame-rate throttle so the rest of the pipeline only sees frames
-at `process_fps` instead of the source's native rate.
+and frame-count decimation so the rest of the pipeline sees a
+CONTINUOUS substream at `process_fps` instead of the source's native
+rate.
 """
 from __future__ import annotations
 
 import logging
+import math
+import queue
 import subprocess
 import threading
 import time
