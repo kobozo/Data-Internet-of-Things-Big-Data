@@ -69,8 +69,9 @@ The five assignment parts map onto:
 The project targets **Python 3.10+** on macOS / Linux / Windows.
 
 ```bash
-# 1. clone (or just open this folder)
-cd "Internet of Things & Big Data"
+# 1. clone the repository
+git clone git@github.com:kobozo/Data-Internet-of-Things-Big-Data.git
+cd Data-Internet-of-Things-Big-Data
 
 # 2. create an isolated virtual environment
 python3 -m venv .venv
