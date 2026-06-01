@@ -7,6 +7,7 @@ resolvers are patched to no-ops.
 from __future__ import annotations
 
 import math
+import threading
 import time
 
 import numpy as np
@@ -28,7 +29,8 @@ class FakeCapture:
     assert ordering.
     """
 
-    def __init__(self, fps=30.0, n_frames=1000, opened=True, frame_shape=(4, 4, 3)):
+    def __init__(self, fps=30.0, n_frames=1000, opened=True, frame_shape=(4, 4, 3),
+                 gate=None):
         self._fps = fps
         self._n_frames = n_frames
         self._opened = opened
@@ -37,6 +39,13 @@ class FakeCapture:
         self._grabbed_value = -1  # fill value of the most recently grabbed frame
         self.set_calls = []
         self.released = False
+        # Optional flow-control: when set, grab() blocks until a permit is
+        # released, making the reader emit exactly as many frames as the test
+        # allows (removes the reader-races-ahead non-determinism).
+        self._gate = gate
+        # The Livestream's stop_event; a gate-blocked grab() watches it so it
+        # can unwind when close() is called and let the reader thread exit.
+        self.stop_event = None
 
     def isOpened(self):
         return self._opened
@@ -50,6 +59,13 @@ class FakeCapture:
         return True
 
     def grab(self):
+        if self._gate is not None:
+            # Block (with short timeout so close()/stop can still end us) until
+            # the test releases a permit for the next frame.
+            while not self._gate.acquire(timeout=0.02):
+                if (self.stop_event is not None and self.stop_event.is_set()) \
+                        or self._pos >= self._n_frames:
+                    return False
         if self._pos >= self._n_frames:
             return False
         # Encode the absolute frame index into the frame for ordering checks.
@@ -107,6 +123,24 @@ def _drain(ls, count, timeout=5.0):
     return out
 
 
+def _drain_gated(ls, gate, count, timeout=5.0):
+    """Lockstep drain: release one grab permit, pull one frame, repeat.
+
+    With stride == 1 each released permit produces exactly one emitted frame,
+    so the frames collected are consecutive emit indices (fully deterministic
+    timestamps, no reader-races-ahead).
+    """
+    out = []
+    gen = ls.frames()
+    deadline = time.time() + timeout
+    while len(out) < count:
+        if time.time() > deadline:
+            pytest.fail(f"timed out after collecting {len(out)}/{count} frames")
+        gate.release()
+        out.append(next(gen))
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # 1. Stride computation in open()
 # --------------------------------------------------------------------------- #
@@ -151,13 +185,17 @@ def test_open_raises_when_not_opened(monkeypatch):
 # 2. Synthetic video clock: consecutive ts exactly 1/process_fps apart
 # --------------------------------------------------------------------------- #
 def test_video_clock_spacing(monkeypatch):
-    cap = FakeCapture(fps=30.0, n_frames=10_000)
+    gate = threading.Semaphore(0)
+    # fps == process_fps -> stride 1 -> one grab == one emitted frame.
+    cap = FakeCapture(fps=2.0, n_frames=10_000, gate=gate)
     _install_capture(monkeypatch, cap)
 
     ls = Livestream("fake://url", process_fps=2.0)
+    assert ls.process_fps == 2.0
     ls.open()
+    cap.stop_event = ls._stop_event  # let a gate-blocked grab() unwind on close()
     try:
-        frames = _drain(ls, 5)
+        frames = _drain_gated(ls, gate, 5)
     finally:
         ls.close()
 
@@ -168,8 +206,10 @@ def test_video_clock_spacing(monkeypatch):
     step = 1.0 / ls.process_fps
     for a, b in zip(ts, ts[1:]):
         assert math.isclose(b - a, step, abs_tol=1e-9), (a, b)
-    # ts is anchored at the stream-start origin.
-    assert math.isclose(ts[0], ls._stream_start, abs_tol=1e-9)
+    # In lockstep the first emitted frame has emit_index 0, so ts[0] is
+    # exactly the stream-start origin and ts[k] == origin + k*step.
+    for k, t in enumerate(ts):
+        assert math.isclose(t, ls._stream_start + k * step, abs_tol=1e-9), (k, t)
     # Frame.index increments 1..N.
     assert [f.index for f in frames] == [1, 2, 3, 4, 5]
 
@@ -178,14 +218,17 @@ def test_video_clock_spacing(monkeypatch):
 # 3. Monotonic ts across a simulated reconnect
 # --------------------------------------------------------------------------- #
 def test_ts_monotonic_across_reconnect(monkeypatch):
-    cap1 = FakeCapture(fps=30.0, n_frames=10_000)
-    cap2 = FakeCapture(fps=30.0, n_frames=10_000)
+    gate1 = threading.Semaphore(0)
+    gate2 = threading.Semaphore(0)
+    cap1 = FakeCapture(fps=2.0, n_frames=10_000, gate=gate1)
+    cap2 = FakeCapture(fps=2.0, n_frames=10_000, gate=gate2)
     _install_capture(monkeypatch, cap1, cap2)
 
     ls = Livestream("fake://url", process_fps=2.0)
     ls.open()
+    cap1.stop_event = ls._stop_event
     try:
-        first = _drain(ls, 3)
+        first = _drain_gated(ls, gate1, 3)
         start_origin = ls._stream_start
         emit_after_first = ls._emit_index
 
@@ -194,19 +237,24 @@ def test_ts_monotonic_across_reconnect(monkeypatch):
         # _emit_index must NOT reset.
         ls.close()
         ls.open()  # hands out cap2
+        cap2.stop_event = ls._stop_event
 
         assert ls._stream_start == start_origin, "origin reset on reconnect"
         assert ls._emit_index == emit_after_first, "emit index reset on reconnect"
 
-        second = _drain(ls, 3)
+        second = _drain_gated(ls, gate2, 3)
     finally:
         ls.close()
 
     all_ts = [f.ts for f in first] + [f.ts for f in second]
     # ts never goes backwards across the reconnect boundary.
     assert all(b > a for a, b in zip(all_ts, all_ts[1:])), all_ts
-    # The spacing is preserved across the boundary (no reset to origin).
+    # The whole sequence is one uninterrupted grid: origin + k*step for
+    # k == 0..5 (emit_index kept monotonic across the reconnect).
     step = 1.0 / ls.process_fps
+    for k, t in enumerate(all_ts):
+        assert math.isclose(t, start_origin + k * step, abs_tol=1e-9), (k, t)
+    # Spacing preserved across the boundary (no reset to origin).
     assert math.isclose(second[0].ts - first[-1].ts, step, abs_tol=1e-9)
 
 
@@ -214,42 +262,54 @@ def test_ts_monotonic_across_reconnect(monkeypatch):
 # 4. Bounded queue evicts the oldest item when full
 # --------------------------------------------------------------------------- #
 def test_reader_loop_evicts_oldest_when_full(monkeypatch):
-    """Drive _reader_loop directly with stride=1 and never drain the queue.
+    """Run the reader against a gated fake and never drain the queue.
 
-    With _QUEUE_MAXSIZE == 8 and more than 8 emitted frames, the queue must
-    hold the 8 NEWEST frames (oldest evicted), and never raise.
+    With _QUEUE_MAXSIZE == 8 and more than 8 emitted frames, the reader must
+    not block: it evicts the OLDEST queued frame so the queue ends up holding
+    the 8 NEWEST frames.
     """
     n = stream_mod.Livestream._QUEUE_MAXSIZE  # 8
     extra = 5
-    cap = FakeCapture(fps=2.0, n_frames=n + extra)  # 2fps@2fps -> stride 1
+    total = n + extra
+    gate = threading.Semaphore(0)
+    cap = FakeCapture(fps=2.0, n_frames=10_000, gate=gate)
     _install_capture(monkeypatch, cap)
 
-    ls = Livestream("fake://url", process_fps=2.0)
-    ls.open()
-    # Stop the auto-started reader thread; we run the loop ourselves so the
-    # queue is never drained concurrently.
-    ls.close()
-    # close() released cap; re-attach the fake and reset the producer so the
-    # loop has frames again, then run the loop to exhaustion in this thread.
-    cap._pos = 0
-    cap.released = False
-    ls._cap = cap
-    ls._stop_event.clear()
-    ls._emit_index = 0
-    ls._reader_loop()  # returns when grab() == False (finite fake)
+    # High process_fps so the reader's real-time pacing imposes ~1ms spacing
+    # (effectively no throttle) and the eviction path is exercised quickly.
+    # stride = max(1, round(2.0 / 1000.0)) == 1, so every grab is emitted.
+    ls = Livestream("fake://url", process_fps=1000.0)
+    ls.open()                       # starts the reader thread
+    cap.stop_event = ls._stop_event
+    try:
+        # Release exactly `total` grab permits.  The consumer NEVER reads the
+        # queue, so once it is full each further emit must evict the oldest.
+        for _ in range(total):
+            gate.release()
 
-    q = ls._queue
-    assert q.maxsize == n
-    assert q.qsize() == n, "queue should be saturated at maxsize, not blocked"
+        # Wait until all `total` frames have been emitted by the reader.
+        deadline = time.time() + 5.0
+        while ls._emit_index < total:
+            if time.time() > deadline:
+                pytest.fail(f"reader emitted only {ls._emit_index}/{total}")
+            time.sleep(0.01)
+        # Let any in-flight eviction settle, then freeze the producer.
+        time.sleep(0.05)
+        q = ls._queue
 
-    fill_values = []
-    while not q.empty():
-        img, _ts = q.get_nowait()
-        fill_values.append(int(img.flat[0]))
+        assert q.maxsize == n
+        assert q.qsize() == n, "queue should be saturated at maxsize, not blocked"
 
-    # n + extra frames were produced (fill values 0 .. n+extra-1); only the
-    # last n survive -> the oldest `extra` were evicted.
-    expected = list(range((n + extra) - n, n + extra))
+        fill_values = []
+        while not q.empty():
+            img, _ts = q.get_nowait()
+            fill_values.append(int(img.flat[0]))
+    finally:
+        ls.close()
+
+    # `total` frames were produced (fill values 0 .. total-1); only the last n
+    # survive in order -> the oldest `extra` were evicted.
+    expected = list(range(total - n, total))
     assert fill_values == expected, fill_values
 
 

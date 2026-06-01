@@ -209,9 +209,22 @@ class Livestream:
         continuity.  When the queue is full we drop our OLDEST queued
         frame instead, keeping the decoder continuously drained while
         bounding hand-off latency.
+
+        The decoder is also paced to REAL-TIME: YouTube live HLS exposes a
+        multi-minute DVR rewind buffer and OpenCV opens at its START, so an
+        unthrottled grab loop would race through that buffer at many times
+        real-time, overflow the bounded queue and re-introduce large
+        video-time gaps between surviving frames.  We therefore emit at most
+        `process_fps` decimated frames per WALL-CLOCK second (schedule local
+        to this run, reset on reconnect).  Pacing only ever THROTTLES a reader
+        running too fast; a reader that has fallen behind emits immediately
+        (no sleep-debt catch-up), so it can never exceed real-time but is
+        free to lag on slow CPUs.
         """
         grabbed = 0
         dropped = 0
+        pace_start = time.monotonic()
+        emitted_local = 0
         while not self._stop_event.is_set():
             cap = self._cap
             if cap is None:
@@ -236,6 +249,15 @@ class Livestream:
             else:
                 video_ts = self._last_decoded_ts
             self._emit_index += 1
+
+            # Pace to real-time: throttle a too-fast reader to ~process_fps
+            # emissions per wall-clock second.  Never accumulate sleep debt -
+            # if we're already behind schedule, emit at once.
+            if self.process_fps > 0:
+                target = pace_start + emitted_local / self.process_fps
+                while not self._stop_event.is_set() and time.monotonic() < target:
+                    self._stop_event.wait(min(0.05, target - time.monotonic()))
+            emitted_local += 1
 
             item = (img, video_ts)
             try:

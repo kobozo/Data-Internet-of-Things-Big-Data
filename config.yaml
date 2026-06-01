@@ -9,7 +9,8 @@
 # pedestrian accumulates enough dwell time to be classified.
 #
 #   FIXED-CAM (use these):
-#     Brussels Grand Place (BE) https://www.youtube.com/watch?v=TfhntMe0qys   # 640x360, DEFAULT
+#     Live feed (1080p)         https://www.youtube.com/watch?v=vVyBOU9Huvo   # DEFAULT, real-time
+#     Brussels Grand Place (BE) https://www.youtube.com/watch?v=TfhntMe0qys   # 640x360
 #     Trevi Fountain, Rome      https://www.youtube.com/watch?v=j39vIidsIJI   # 640x360
 #     Jackson Hole town square  https://www.youtube.com/watch?v=1EiC9bvVGnk   # 1280x720
 #
@@ -24,11 +25,15 @@
 # "live webcam" on YouTube and paste any working URL below.
 
 stream:
-  # Brussels Grand Place (SINGLE fixed camera).  One steady view, so
+  # Real LIVE single fixed-camera feed (1080p).  One steady view, so
   # pedestrians stay in frame long enough to accumulate dwell time and
-  # be classified.  scene_cut detection (below) stays enabled as a
-  # safety net but should rarely (ideally never) fire on this feed.
-  url: "https://www.youtube.com/watch?v=TfhntMe0qys"
+  # be classified.  Measured frame age ~0s (genuinely live, no DVR
+  # replay) and inter-frame motion mad ~0.5-2.6, so scene_cut detection
+  # (below) never false-fires here.
+  # NOTE: yt-dlp may report this URL "not available"; the streamlink
+  # fallback in stream.py resolves it, so `pip install streamlink`
+  # (already in requirements) is required for this feed.
+  url: "https://www.youtube.com/watch?v=vVyBOU9Huvo"
   # frame rate at which we PROCESS frames (we do not need 30 fps for analytics)
   process_fps: 2
   reconnect_after_seconds: 10
@@ -59,8 +64,13 @@ scene:
   # absolute pixel-difference exceeds this threshold we treat it as
   # a cut and clear every active track, so the new view doesn't
   # inherit phantom track ids from the previous one.
-  # Set to 0 to disable.  Typical values: 18-25.
-  cut_threshold: 22
+  # Set to 0 to disable.  On a FIXED single-cam feed normal crowd/water
+  # motion at 0.5s steps measures mad ~0.5-35, while a genuine hard cut
+  # spikes to ~80-150.  We set this well above the motion band so it
+  # only fires on a real discontinuity (reconnect jump / accidental
+  # multi-cam URL) and never on ordinary movement.  Lower to ~22 only
+  # for multi-camera composite streams.
+  cut_threshold: 50
 
 classifier:
   # weights for the tourist score

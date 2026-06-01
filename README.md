@@ -4,37 +4,39 @@
 > Author: Yannick Baxter
 
 This project reads a **public livestream of a public place** — by
-default the UNESCO-listed **Grand Place in Brussels** — classifies
+default the **Atlantic City beach & boardwalk** (the *Resorts Casino
+Hotel Beach Camera*, a single fixed 1080p live feed) — classifies
 every detected pedestrian as **TOURIST**, **LOCAL**, or
-**UNCERTAIN** based on visible cues (luggage, photo pose, walking
-speed, dwell time, group membership), generates **events** when
-something notable happens, and stores everything in a shape that
+**UNCERTAIN** based on visible cues (luggage/beach bags, photo pose,
+walking speed, dwell time, group membership), generates **events**
+when something notable happens, and stores everything in a shape that
 scales to a city-wide IoT pipeline (CSV time-series + MQTT event
 bus + SQLite event log).
 
-> The Grand Place is the most-touristed square in Belgium — easily
-> several million visitors per year — so the tourist-vs-local signal
-> is strong and the demo is visually convincing.
+> Atlantic City is one of the busiest seaside-resort destinations on
+> the US East Coast — tens of millions of visitors a year to its
+> casinos, beach and Boardwalk — so the tourist-vs-local signal is
+> strong and the demo is visually convincing.
 
 ## Why is this useful?
 
 Tourism boards, city councils, retailers and transport operators
 spend a lot of money on surveys to estimate the **tourist share** at
 any given location and time. A camera that already exists on a public
-street can do this passively, in real time, at zero marginal cost.
+beachfront can do this passively, in real time, at zero marginal cost.
 
-Concrete questions the data answers, using the **Brussels Grand
-Place** default stream:
+Concrete questions the data answers, using the **Atlantic City beach**
+default stream:
 
-* what fraction of pedestrians on the Grand Place are tourists, *per
-  hour* of day?  (visit.brussels currently relies on hotel-booking
-  proxies; this gives a direct head-count.)
-* when do tour groups arrive — early morning bus drop-offs, after-
-  lunch peaks, evening light-show audiences?
-* during a heritage event (e.g. *Tapis de Fleurs*), how much does the
-  tourist share rise vs a normal weekend?
-* are visitor patterns shifting after the new pedestrianisation rules
-  in the Pentagon district?
+* what fraction of people on the beach/Boardwalk are visitors, *per
+  hour* of day?  (destination marketers like *Meet AC* / the CRDA rely
+  on hotel and casino proxies; this gives a direct head-count.)
+* when do groups arrive — morning beach setups, midday peaks, evening
+  Boardwalk strollers?
+* during a draw event (a beach concert, fireworks, a holiday weekend),
+  how much does the visitor count rise vs a normal weekday?
+* how do crowd patterns shift with weather, season, or a new Boardwalk
+  attraction?
 
 ## Pipeline
 
@@ -107,14 +109,20 @@ public broker `test.mosquitto.org` (best-effort: no auth, no
 persistence — and on macOS+Homebrew it often returns "Bad file
 descriptor", so local is more reliable).
 
-### Optional: streamlink fallback
+### streamlink fallback (required for the default feed)
 
-When YouTube rotates its HLS URLs faster than `yt-dlp` can follow,
-`streamlink` is used as a backup resolver:
+When YouTube rotates its HLS URLs faster than `yt-dlp` can follow — or
+when `yt-dlp` reports a stream as *"not available"*, which currently
+happens with the **default Atlantic City feed** — `streamlink` is used
+as a backup resolver. It is therefore **required**, not optional, for
+the default stream:
 
 ```bash
 pip install streamlink     # already in requirements.txt
 ```
+
+`tourist_classifier/stream.py` tries `yt-dlp` first and automatically
+falls back to `streamlink`, so no config change is needed.
 
 ## Running
 
@@ -246,18 +254,20 @@ camera is an independent IoT node publishing to the same broker.
 
 **Stakeholders / consumers of the data:**
 
-* **Tourism boards** – hourly tourist share per location, year-on-year
-* **Retailers** on the street – staffing decisions, sign translations
-* **Mobility operators** – tour-bus pickup-point load
-* **Urban planners** – validate or refute pedestrianisation policies
-* **Emergency services** – `density_spike` + `quiet_period` events
-  flag crowd surges or sudden evacuations
+* **Tourism boards / casino marketing** – hourly visitor share per
+  location, year-on-year
+* **Boardwalk retailers & concessions** – staffing and stock decisions
+* **Mobility operators** – jitney / parking / pickup-point load
+* **City & beach planners** – validate Boardwalk and beach investments
+* **Beach patrol / emergency services** – `density_spike` +
+  `quiet_period` events flag crowd surges or sudden evacuations
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
 | `Could not open stream` | YouTube rotated the live URL.  Pick a different one in `config.yaml`. |
+| `yt-dlp` says "video is not available" | Expected for the default Atlantic City feed — make sure `streamlink` is installed (`pip install streamlink`); the resolver falls back to it automatically. |
 | `yt-dlp` extraction fails | `pip install -U yt-dlp` (extractor changes weekly). |
 | Black window, no detections | Stream is night-mode or low-res.  Try `--source 0` (webcam) to verify the pipeline. |
 | MQTT 'connect_failed' | Public broker is throttled.  Run a local broker (`docker run -p 1883:1883 eclipse-mosquitto`). |
