@@ -24,12 +24,11 @@
 # "live webcam" on YouTube and paste any working URL below.
 
 stream:
-  # EarthCam Times Square Crossroads (MULTI-CAMERA composite!).
-  # Each 1-2s the live stream cuts to a different physical camera
-  # angle.  We handle this with scene_cut detection in main.py
-  # (which resets the tracker on each detected cut so the new view
-  # doesn't inherit stale identities from the previous one).
-  url: "https://www.youtube.com/watch?v=PGrq-2mju2s"
+  # Trevi Fountain, Rome (SINGLE fixed camera).  One steady view, so
+  # pedestrians stay in frame long enough to accumulate dwell time and
+  # be classified.  scene_cut detection (below) stays enabled as a
+  # safety net but should rarely (ideally never) fire on this feed.
+  url: "https://www.youtube.com/watch?v=j39vIidsIJI"
   # frame rate at which we PROCESS frames (we do not need 30 fps for analytics)
   process_fps: 2
   reconnect_after_seconds: 10
