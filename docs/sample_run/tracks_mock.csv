@@ -1,0 +1,6 @@
+ts_iso_first,ts_iso_last,track_id,lifetime_s,avg_speed_px,max_dwell_s,has_suitcase,has_backpack,has_handbag,holding_phone_high,final_score,final_label,reasons
+2026-05-27T13:01:20.906426+00:00,2026-05-27T13:01:27.906426+00:00,2,7.0,60.0,0.0,0,0,0,0,0.0,LOCAL,
+2026-05-27T13:01:15.906426+00:00,2026-05-27T13:01:35.906426+00:00,1,20.0,1.0,20.0,1,0,0,0,5.5,TOURIST,suitcase|dwell_20.0s|slow_walker
+2026-05-27T13:01:30.906426+00:00,2026-05-27T13:01:50.906426+00:00,3,20.0,0.4,20.0,0,1,0,0,4.5,TOURIST,backpack|dwell_20.0s|slow_walker|group_with_4
+2026-05-27T13:01:30.906426+00:00,2026-05-27T13:01:50.906426+00:00,4,20.0,0.4,20.0,0,1,0,0,4.5,TOURIST,backpack|dwell_20.0s|slow_walker|group_with_3
+2026-05-27T13:01:30.906426+00:00,2026-05-27T13:01:50.906426+00:00,5,20.0,0.4,20.0,0,1,0,0,4.5,TOURIST,backpack|dwell_20.0s|slow_walker|group_with_4

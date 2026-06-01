@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# YOLO weights & cache
+*.pt
+runs/
+
+# Generated data (keep folder, ignore contents except .gitkeep)
+data/*
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local tooling / index caches
+.chunkhound/
+.idea/
+.vscode/

@@ -1,0 +1,16 @@
+# Core
+opencv-python>=4.9.0
+numpy>=1.24.0
+PyYAML>=6.0
+
+# Livestream
+yt-dlp>=2024.4.9
+streamlink>=6.7.0   # fallback for streams that yt-dlp dislikes
+
+# Detection
+ultralytics>=8.1.0   # YOLOv8 (auto-downloads yolov8n.pt on first run)
+
+# IoT / Big Data
+paho-mqtt>=1.6.1
+pandas>=2.1.0
+matplotlib>=3.8.0

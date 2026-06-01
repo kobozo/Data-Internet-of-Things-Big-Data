@@ -1,0 +1,118 @@
+# =====================================================================
+# Tourist-vs-Local livestream analyser  -  configuration
+# =====================================================================
+# Pick any PUBLIC livestream of a PUBLIC place that shows pedestrians.
+# Verified-working URLs (2026-06-01):
+#
+# IMPORTANT: pick a SINGLE-CAMERA stream.  Multi-cam compilations
+# (EarthCam composite feeds) reset the tracker on every cut, so no
+# pedestrian accumulates enough dwell time to be classified.
+#
+#   FIXED-CAM (use these):
+#     Trevi Fountain, Rome      https://www.youtube.com/watch?v=j39vIidsIJI   # 640x360, DEFAULT
+#     Jackson Hole town square  https://www.youtube.com/watch?v=1EiC9bvVGnk   # 1280x720
+#     Brussels Grand Place (BE) https://www.youtube.com/watch?v=TfhntMe0qys   # 640x360
+#
+#   MULTI-CAM (avoid!):
+#     Times Sq Crossroads (EC)  https://www.youtube.com/watch?v=PGrq-2mju2s   # cuts every 2s
+#     Mardi Gras New Orleans    https://www.youtube.com/watch?v=Do5uGMQoK3M   # likely composite
+#
+# To check a new URL yourself, run from the project root:
+#   python tools/check_single_camera.py <youtube_url>
+#
+# YouTube sometimes rotates the live URL: if a stream fails, search
+# "live webcam" on YouTube and paste any working URL below.
+
+stream:
+  # EarthCam Times Square Crossroads (MULTI-CAMERA composite!).
+  # Each 1-2s the live stream cuts to a different physical camera
+  # angle.  We handle this with scene_cut detection in main.py
+  # (which resets the tracker on each detected cut so the new view
+  # doesn't inherit stale identities from the previous one).
+  url: "https://www.youtube.com/watch?v=PGrq-2mju2s"
+  # frame rate at which we PROCESS frames (we do not need 30 fps for analytics)
+  process_fps: 2
+  reconnect_after_seconds: 10
+  show_window: true            # set false on a headless server
+
+detector:
+  model: "yolov8n.pt"          # downloaded automatically on first run
+  conf_threshold: 0.35
+  # On Apple Silicon try "mps" - it's ~5x faster than "cpu" and that
+  # alone fixes much of the "frame skip" perception because the loop
+  # cycles closer to the source frame rate.
+  device: "cpu"                # "cpu" | "mps" (Apple Silicon) | "cuda"
+  # COCO class ids we care about
+  classes:
+    person: 0
+    backpack: 24
+    handbag: 26
+    suitcase: 28
+    cell_phone: 67
+
+tracker:
+  max_disappeared: 15          # frames a track may be missing before being dropped
+  max_distance_px: 80          # max centroid distance to link a detection to a track
+
+scene:
+  # Multi-camera composite streams (EarthCam Crossroads, etc.) cut
+  # to a new physical camera every 1-2 s.  When the inter-frame mean
+  # absolute pixel-difference exceeds this threshold we treat it as
+  # a cut and clear every active track, so the new view doesn't
+  # inherit phantom track ids from the previous one.
+  # Set to 0 to disable.  Typical values: 18-25.
+  cut_threshold: 22
+
+classifier:
+  # weights for the tourist score
+  weights:
+    has_suitcase: 3.0
+    has_backpack: 1.5
+    has_handbag:  0.5
+    holding_phone_high: 2.0    # phone bbox in upper half of person bbox = photo pose
+    dwell_long: 1.5            # standing still > dwell_seconds
+    slow_walker: 1.0           # avg pixel speed below slow_speed_px
+    group_member: 0.5          # other tourist-scoring person within group_radius_px
+  dwell_seconds: 3.0
+  slow_speed_px: 2.5           # average centroid displacement per processed frame
+  group_radius_px: 120
+  thresholds:
+    tourist: 3.0
+    local: 1.0                 # below this -> local; in-between -> uncertain
+
+events:
+  # rolling window we evaluate every second
+  window_seconds: 30
+  rules:
+    tourist_hotspot:
+      min_tourists_in_window: 5
+      min_tourist_ratio: 0.4
+      cooldown_seconds: 60
+    tourist_group_arrived:
+      min_simultaneous: 3
+      max_pairwise_distance_px: 200
+      cooldown_seconds: 45
+    density_spike:
+      multiplier_vs_baseline: 2.0
+      min_people: 8
+      cooldown_seconds: 60
+    quiet_period:
+      max_people: 1
+      duration_seconds: 60
+      cooldown_seconds: 120
+
+storage:
+  data_dir: "data"
+  frames_csv: "frames.csv"      # one row per processed frame
+  tracks_csv: "tracks.csv"      # one row per finalised track
+  events_db:  "events.sqlite"
+  mqtt:
+    enabled: true
+    host: "localhost"               # local broker installed via `brew install mosquitto`
+    port: 1883
+    topic_prefix: "iot_bigdata/yannick/tourist_classifier"
+    # Start the broker with:  brew services start mosquitto
+    # (or run ad-hoc:         /opt/homebrew/opt/mosquitto/sbin/mosquitto -c /opt/homebrew/etc/mosquitto/mosquitto.conf )
+    # Public-broker fallback: change host to "test.mosquitto.org"
+    # (note: on macOS+Homebrew the public broker often returns
+    # "Bad file descriptor" — local is much more reliable).
