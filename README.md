@@ -88,15 +88,24 @@ manual model setup needed.
 
 ### Optional: MQTT broker
 
-By default the app publishes to the free public broker
-`test.mosquitto.org`.  No setup required, but the broker is best-effort
-(no auth, no persistence).  If you'd rather run your own:
+By default the app publishes to a **local broker** at `localhost:1883`
+(`storage.mqtt.host` in `config.yaml`).  On macOS the quickest way is:
+
+```bash
+brew install mosquitto
+brew services start mosquitto
+```
+
+Or run an ad-hoc broker in Docker:
 
 ```bash
 docker run -it --rm -p 1883:1883 eclipse-mosquitto
 ```
 
-Then change `storage.mqtt.host` in `config.yaml` to `localhost`.
+If you can't run a local broker, set `storage.mqtt.host` to the free
+public broker `test.mosquitto.org` (best-effort: no auth, no
+persistence — and on macOS+Homebrew it often returns "Bad file
+descriptor", so local is more reliable).
 
 ### Optional: streamlink fallback
 
@@ -138,7 +147,7 @@ python -m tourist_classifier.main --max-seconds 300
 ### Inspect MQTT traffic
 
 ```bash
-mosquitto_sub -h test.mosquitto.org \
+mosquitto_sub -h localhost \
   -t "iot_bigdata/yannick/tourist_classifier/#" -v
 ```
 

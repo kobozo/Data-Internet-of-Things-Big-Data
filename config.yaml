@@ -9,9 +9,9 @@
 # pedestrian accumulates enough dwell time to be classified.
 #
 #   FIXED-CAM (use these):
-#     Trevi Fountain, Rome      https://www.youtube.com/watch?v=j39vIidsIJI   # 640x360, DEFAULT
+#     Brussels Grand Place (BE) https://www.youtube.com/watch?v=TfhntMe0qys   # 640x360, DEFAULT
+#     Trevi Fountain, Rome      https://www.youtube.com/watch?v=j39vIidsIJI   # 640x360
 #     Jackson Hole town square  https://www.youtube.com/watch?v=1EiC9bvVGnk   # 1280x720
-#     Brussels Grand Place (BE) https://www.youtube.com/watch?v=TfhntMe0qys   # 640x360
 #
 #   MULTI-CAM (avoid!):
 #     Times Sq Crossroads (EC)  https://www.youtube.com/watch?v=PGrq-2mju2s   # cuts every 2s
@@ -24,11 +24,11 @@
 # "live webcam" on YouTube and paste any working URL below.
 
 stream:
-  # Trevi Fountain, Rome (SINGLE fixed camera).  One steady view, so
+  # Brussels Grand Place (SINGLE fixed camera).  One steady view, so
   # pedestrians stay in frame long enough to accumulate dwell time and
   # be classified.  scene_cut detection (below) stays enabled as a
   # safety net but should rarely (ideally never) fire on this feed.
-  url: "https://www.youtube.com/watch?v=j39vIidsIJI"
+  url: "https://www.youtube.com/watch?v=TfhntMe0qys"
   # frame rate at which we PROCESS frames (we do not need 30 fps for analytics)
   process_fps: 2
   reconnect_after_seconds: 10
